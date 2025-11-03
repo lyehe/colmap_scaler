@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Project outputs
+outputs/
+src/outputs/
+
+# Data (large datasets)
+data/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+uv.lock
