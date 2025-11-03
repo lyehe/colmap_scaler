@@ -59,7 +59,7 @@ class ScalerArgs:
     min_num_views: int = 2
     """Minimum number of views required to triangulate a corner."""
 
-    max_reprojection_error: float = 2.0
+    max_reprojection_error: float = 3.0
     """Maximum reprojection error in pixels."""
 
     export_json: bool = False

@@ -7,9 +7,10 @@ Automatically rescale COLMAP reconstructions to real-world units using fiducial 
 COLMAP Scaler detects fiducial markers in your images, triangulates them in 3D space, and uses their known physical size to rescale your entire COLMAP reconstruction. The tool:
 
 1. Detects ArUco or AprilTag markers in images
-2. Triangulates marker corners to 3D points using COLMAP camera parameters
-3. Estimates scale factor from known marker size vs. reconstructed size
-4. Applies uniform scaling to the entire reconstruction (in-place with backup)
+2. Undistorts detected corners using COLMAP camera distortion models
+3. Triangulates marker corners to 3D points using camera parameters and poses
+4. Estimates scale factor from known marker size vs. reconstructed size
+5. Applies uniform scaling to the entire reconstruction (in-place with backup)
 
 ## Installation
 
@@ -86,7 +87,7 @@ uv run colmap-scaler --input data/my_dataset --marker-size 0.05 --output-name sc
 ```bash
 # Full pipeline with all options
 uv run colmap-scaler \
-    --input data/bed_scale_sfm/bed_scale \
+    --input data/bed_scale \
     --marker-size 0.05 \
     --dictionary DICT_APRILTAG_25h9 \
     --visualize \
@@ -113,7 +114,7 @@ uv run colmap-scaler \
 ### Scaling Options
 - `--reconstruction PATH` - Path to COLMAP sparse reconstruction (default: dataset/sparse/0)
 - `--min-num-views INT` - Minimum views to triangulate corner (default: 2)
-- `--max-reprojection-error FLOAT` - Maximum reprojection error in pixels (default: 2.0)
+- `--max-reprojection-error FLOAT` - Maximum reprojection error in pixels (default: 3.0)
 - `--output-name STR` - Output folder name under sparse/ (default: 0)
 - `--backup-name STR` - Backup folder name (default: {output_name}_before_scale)
 
@@ -189,9 +190,9 @@ Original Reconstruction:
   3D Points: 6931
   Scene extent: 102.1058 units
   Bounding box: [32.7515, 34.8021, 90.2317]
-Triangulated markers: 1/3
+Triangulated markers: 3/3
 Scale estimation method: robust_mean
-Markers used: [2]
+Markers used: [0, 2, 3]
 Scale factor: 0.144516
 ...
 Scaled Reconstruction:
@@ -206,16 +207,19 @@ Before: 102.11 units -> After: 14.76 meters
 ## How It Works
 
 1. **Detection**: Detects fiducial markers in all images and extracts 2D corner coordinates
-2. **Triangulation**: Uses COLMAP camera parameters to triangulate marker corners to 3D points
-3. **Scale Estimation**: Compares known marker size with reconstructed 3D distances
-4. **Scaling**: Applies uniform similarity transformation to entire reconstruction
-5. **Output**: Saves scaled reconstruction (creates backup if overwriting existing folder)
+2. **Undistortion**: Removes lens distortion from detected corners using COLMAP camera models
+3. **Triangulation**: Triangulates undistorted marker corners to 3D points using camera poses
+4. **Scale Estimation**: Compares known marker size with reconstructed 3D distances
+5. **Scaling**: Applies uniform similarity transformation to entire reconstruction
+6. **Output**: Saves scaled reconstruction (creates backup if overwriting existing folder)
 
 **Important Notes:**
-- Camera intrinsics (focal length, principal point) remain unchanged
+- **Properly handles camera distortion**: Undistorts 2D detections before triangulation for accurate 3D reconstruction
+- Camera intrinsics (focal length, principal point, distortion) remain unchanged
 - Only 3D points and camera positions (extrinsics) are scaled
 - Scale estimation uses robust mean method with outlier rejection
 - Multiple markers improve accuracy and robustness
+- Works with all COLMAP camera models (SIMPLE_PINHOLE, PINHOLE, SIMPLE_RADIAL, RADIAL, OPENCV, etc.)
 - Use `--output-name` to write to new location and preserve original
 
 ## Requirements
@@ -244,5 +248,4 @@ colmap_scaler/
 ```
 
 ## License
-
-MIT
+[Apache License 2.0](LICENSE)

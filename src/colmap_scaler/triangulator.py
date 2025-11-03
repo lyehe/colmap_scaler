@@ -111,36 +111,45 @@ class CornerTriangulator:
         if len(observations) < 2:
             return None, float("inf")
 
-        # Collect camera poses and 2D points
-        points2D = []
-        proj_matrices = []
+        # Collect camera poses, cameras, and undistorted normalized points
+        points2D_normalized = []
+        proj_matrices_normalized = []
+        cameras = []
+        images = []
 
         for obs in observations:
             image_id = obs["image_id"]
             image = self.reconstruction.images[image_id]
             camera = self.reconstruction.cameras[image.camera_id]
 
+            # Undistort 2D point to normalized camera coordinates
+            # This removes lens distortion and converts to normalized camera frame
+            point2D_distorted = obs["point2D"]
+            point2D_normalized = camera.cam_from_img(point2D_distorted)
+
             # Get camera pose (world to camera)
             cam_from_world = image.cam_from_world()
             R = cam_from_world.rotation.matrix()
             t = cam_from_world.translation
 
-            # Create projection matrix P = K[R|t]
-            K = camera.calibration_matrix()
+            # Create projection matrix P = [R|t] (no K, using normalized coordinates)
             Rt = np.hstack([R, t.reshape(3, 1)])
-            P = K @ Rt
 
-            proj_matrices.append(P)
-            points2D.append(obs["point2D"])
+            proj_matrices_normalized.append(Rt)
+            points2D_normalized.append(point2D_normalized)
+            cameras.append(camera)
+            images.append(image)
 
-        # Triangulate using DLT (Direct Linear Transform)
-        point3D = self._triangulate_dlt(proj_matrices, points2D)
+        # Triangulate using DLT with normalized coordinates
+        point3D = self._triangulate_dlt(proj_matrices_normalized, points2D_normalized)
 
         if point3D is None:
             return None, float("inf")
 
-        # Calculate reprojection error
-        error = self._calculate_reprojection_error(point3D, proj_matrices, points2D)
+        # Calculate reprojection error (using distortion model)
+        error = self._calculate_reprojection_error_with_distortion(
+            point3D, images, cameras, observations
+        )
 
         return point3D, error
 
@@ -171,35 +180,46 @@ class CornerTriangulator:
         except np.linalg.LinAlgError:
             return None
 
-    def _calculate_reprojection_error(
+    def _calculate_reprojection_error_with_distortion(
         self,
         point3D: np.ndarray,
-        proj_matrices: list[np.ndarray],
-        points2D: list[np.ndarray],
+        images: list,
+        cameras: list,
+        observations: list[dict],
     ) -> float:
-        """Calculate mean reprojection error.
+        """Calculate mean reprojection error with proper distortion handling.
 
-        :param point3D: 3D point.
-        :param proj_matrices: List of projection matrices.
-        :param points2D: List of observed 2D points.
+        :param point3D: 3D point in world coordinates.
+        :param images: List of COLMAP images.
+        :param cameras: List of COLMAP cameras.
+        :param observations: List of observation dicts with original distorted points.
         :returns: Mean reprojection error in pixels.
         """
-        point3D_hom = np.append(point3D, 1.0)
         errors = []
 
-        for P, point2D_obs in zip(proj_matrices, points2D):
-            # Project 3D point to 2D
-            point2D_proj_hom = P @ point3D_hom
-            point2D_proj = point2D_proj_hom[:2] / point2D_proj_hom[2]
+        for image, camera, obs in zip(images, cameras, observations):
+            # Transform 3D point to camera coordinates
+            cam_from_world = image.cam_from_world()
+            point3D_cam = cam_from_world * point3D
 
-            # Calculate error
+            # Check if point is behind camera
+            if point3D_cam[2] <= 0:
+                # Point behind camera
+                errors.append(float("inf"))
+                continue
+
+            # Apply distortion and convert to pixel coordinates (using 3D point)
+            point2D_proj = camera.img_from_cam(point3D_cam)
+
+            # Compare with original distorted observation
+            point2D_obs = obs["point2D"]
             error = np.linalg.norm(point2D_proj - point2D_obs)
             errors.append(error)
 
         return np.mean(errors)
 
     def validate_triangulated_corners(
-        self, triangulated_markers: dict[int, dict], max_reprojection_error: float = 2.0
+        self, triangulated_markers: dict[int, dict], max_reprojection_error: float = 3.0
     ) -> dict[int, dict]:
         """Validate triangulated corners and filter by reprojection error.
 

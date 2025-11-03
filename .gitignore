@@ -25,4 +25,7 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+NUL
+
+# Lock files
 uv.lock
